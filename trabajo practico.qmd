@@ -1,0 +1,642 @@
+---
+title: "Trabajo Practico 1 de Laboratorio de Datos"
+author:
+- Canepa Cervini Augusto
+- Dominguez Leonardo
+- Lamonica Ivo
+
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r,echo=FALSE, results="hide",error = FALSE, warning = FALSE,message = FALSE}
+
+require("ggplot2")
+require("dplyr")
+require("readr")
+require("tidyr")
+require("geosphere")
+require("lubridate")
+require("leaflet")
+
+#Se carga los df (el del clima y de las bicicletas)
+datos_clima <- read_csv("datos_clima.csv")
+trips <- read_csv("trips_2022_reducido.csv")
+
+```
+
+## Introducción
+
+En este trabajo, usaremos lo aprendido en clase para analizar, manipular, describir y explorar con diferentes tipos de datos. Para demostrar esto, trabajaremos con dos datasets: los datos del clima recolectados en el Aeroparque durante todo el año de 2022 y un muestra de 10.000 casos de viajes de usuarios de Ecobici.
+
+Para empezar, trabajaremos con el dataset de usuarios de Ecobici.
+
+## Dataset: usuarios de Ecobici
+
+### Análisis descriptivo
+
+Empecemos describiendo las variables que presenta este dataset (en negrita se especifica su variable en el df):
+
+-   La fecha en la que se hizo el reccorido (**fecha**)
+
+-   La duración del recorrido (**duracion_recorrido**) expresada en segundos,
+
+-   La fecha de partida y de llegada con su dia y hora (**fecha_origen_recorrido** y **fecha_destino_recorrido** respectivamente)
+
+-   las estaciones de partida y salida de cada viaje (**nombre_estacion_origen** y **nombre_estacion_destino**)
+
+-   Datos referidos a cada estacion (diferenciados por origen y destino, cambiando "\_origen/ \_destino" al final de la variable en el df) como su longtitud (**long_estacion\_**), latitud (**lat_estacion)**, direccion (**direccion_estacion**), identificador (**id_estacion)** y nombre (**nombre_estacion**)
+
+-   El identificador de cada viaje realizado ( **Id_recorrido**)
+
+-   El identificador del usuario que uso la bicicleta (**id_usuario**)
+
+-   El genero de la persona (**Género)**
+
+-   El modelo de la bicicleta (**modelo_bicicleta)**
+
+Antes de manejar los datos, como dicta la consigna, vamos a establecer como criterio de selección de los viajes, aquellos recorridos comprendidos entre 5 minutos y 1 hora. Es decir, entre 300 y 3600 segundos:
+
+```{r}
+trips <- trips %>% filter(duracion_recorrido >= 300 & duracion_recorrido <=3600) #Filtramos los minutos necesarios
+```
+
+Ahora si, teniendo los datos necesarios para empezar a realizar un análisis descriptivo de este dataset, vamos a comenzar a explorar desde aspectos que resulten más "sencillos"; y luego, a medida de que recolectemos suficiente información, iremos complejizando y generando hipótesis basadas en los resultados anteriores.
+
+En primer lugar, lo primero que se nos ocurre ver son los modelos de bicicletas presentados en el dataset y la cantidad de elecciones de cada uno, para ver si encontramos alguna diferencia notable entre estas variables:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+trips %>% count(modelo_bicicleta) #Visualiza en una tabla los modelos de bicleta y hace una sumatoria de cuantas veces se utilizó
+```
+
+Acá podemos ver que no hay mucha diferencia entre cantidad de modelos, que, aunque parezca un análisis simple, nos permite entender que no hay una preferencia por un modelo sobre otro a la hora de elegir qué EcoBici usar.
+
+Podemos también hacer lo mismo con el género de los usuarios con la siguiente tabla:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+genero_dataset <- trips %>% 
+distinct(id_usuario, Género) %>% #Tomo los usuarios no repetidos
+  drop_na()%>%
+  count(Género) %>% #Cuento cuantas veces aparece cada genero
+  mutate(Porcentaje = round(n / sum(n) * 100)) #Y hago su porcentaje
+genero_dataset
+```
+
+Cabe aclarar, que en esta última tabla (o tibble) se muestra el género de los usuarios que usaron alguna EcoBici, pero sin repetidos, ya que muchos de estos usuarios han hecho más de un viaje, y el dataset dado guarda datos según recorridos individuales. Para mejorar la visualización, decidimos incluir un gráfico de barras para explayar esta información mejor:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+
+#Grafico que muestra la frecuencia de las bicis usadas por cada genero
+ggplot(genero_dataset, mapping = aes(
+  x=Género,
+  y=n,
+  fill=Género)) + #X= genero, y= frecuencia
+  geom_col() + #Se crea un grafico de barras
+  labs(x = "Género", y = "Frecuencia", title = "Distribución de Género") +
+   geom_label(aes(label = paste0(Porcentaje, "%")))
+
+```
+
+Es importante ir más allá de los datos de los usuarios en sí y de sus recorridos individuales, como su género o el modelo de bicicleta que usaron, para pasar a centrarse en los datos de una manera más global, para esto, podemos ver por ejemplo el uso de las Ecobicis a lo largo del año de la siguiente manera:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+trips_trimestral <-trips %>% mutate("trimestre" = quarters(fecha)) %>% count(trimestre) %>%
+  mutate(trimestre = recode(trimestre,
+    "Q1" = "Trimestre 1",
+    "Q2" = "Trimestre 2",
+    "Q3" = "Trimestre 3",
+    "Q4" = "Trimestre 4"
+  ))%>%
+mutate(Porcentaje = round(n / sum(n) * 100))
+trips_trimestral
+```
+
+Acá podemos ver la información de las fechas en las que se hicieron los viajes de una manera más simplificada, al dividir el año en 4 cuartos (quedando trimestres), vemos como a lo largo del año los viajes en EcoBici van aumentando. Esto tambien lo podemos ver con el siguiente gráfico:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(trips_trimestral,
+       mapping =aes(
+          x=trimestre,
+          y=n,
+          fill =trimestre)) + 
+  geom_col() +
+  labs(x = "Trimestre", y = "Frecuencia", title = "Distribución de uso por trimestre")+
+   geom_label(aes(label = paste0(Porcentaje, "%")))
+```
+
+Ahora se puede visualizar mucho mejor el aumento de uso en Ecobici a lo largo del año, con una diferencia notable entre el principio y el final del año.
+
+También nos podemos centrar en variables no discretas, como por ejemplo la duración del trayecto. Al haber más cantidad de datos únicos, la mejor manera de ver la duración de los trayectos es usando un gráfico de puntos:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+trips <- trips %>% mutate(duracion_en_min = duracion_recorrido/60)
+ggplot(trips %>% mutate(trips,"Trimestre" = quarters(fecha)), mapping=aes(
+  x=fecha,
+  y=duracion_en_min,
+  color=Trimestre
+)) + geom_point() + labs(x = "Fecha", y = "Duración de viajes (en minutos)", title = "Duración de cada viaje (en minutos) en todo el año, según el trimestre")
+```
+
+Y también con este gráfico similar al anterior pero dividido más claramente por trimestres.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+#Se crea dataset diferenciado en cuatrimestres y que sume la cantidad de recorridos por dia
+trips_duracion_diaria <- trips %>% 
+  mutate("Trimestre" = quarters(fecha))%>%
+    mutate(Trimestre = recode(Trimestre,
+    "Q1" = "Trimestre 1",
+    "Q2" = "Trimestre 2",
+    "Q3" = "Trimestre 3",
+    "Q4" = "Trimestre 4"
+  ))%>%
+  group_by(fecha, Trimestre)%>%
+  mutate(Duración_Total = sum(duracion_recorrido/60))%>% #Nueva columna con la duración por día en minutos
+  distinct(Duración_Total) #Tomo fechas unicas
+  
+#Se crea gráfico de puntos para visualizar cuántos minutos se reccorieron por cada día
+ggplot(trips_duracion_diaria,
+         mapping=aes(
+           x=fecha,
+           y=Duración_Total
+         )) + 
+  labs(x = "Fecha", y = "Duración de  los viajes (en minutos)", title = "Duracion de los viajes segun el trimestre")+
+  geom_point(aes(color=Trimestre))+ #Gráfico de puntos
+  facet_wrap(~ Trimestre, ncol = 4, scales = "free_x") #Divido en 4 graficos según cuál sea su cuatrimestre
+
+
+```
+
+Con los casos extremos ya removidos, se puede apreciar la duración de los viajes a lo largo del año, y para facilitar la visualización agregamos una distinción por cuartil del año usando colores, simplificando el diseño del gráfico.
+
+Para presentar información adicional, presentamos el promedio y la mediana de los viajes realizados por minuto
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+trips_info <- trips %>%
+     summarise(promedio_minutos = round(mean(duracion_en_min)),
+            mediana_minuto= round(median(duracion_en_min)))
+trips_info
+```
+
+Para también poder visualizar la cantidad de viajes que hizo cada usuario, usamos el siguiente:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+viajesDeCadaUsuario<-trips %>%
+  group_by(id_usuario) %>% #Agrupo por usuario
+  summarize(viajesTotales= n()) #Sumo los viajes realizados por cada persona
+
+viajesTotalesPorPersona <- viajesDeCadaUsuario %>%
+  group_by(viajesTotales) %>%
+  summarize(cantidad_personas = n()) %>% #Sumo la cantidad de personas que hicieron la misma cantidad de viajes
+  arrange(viajesTotales) #Las ordeno de menor a mayor segun su cantidad de viajes
+viajesTotalesPorPersona
+```
+
+Acá podemos apreciar como la cantidad de personas que hicieron múltiples viajes baja drásticamente cuando la cantidad de viajes totales sube, permitiéndonos ver que la mayor parte de los usuarios usó el sistema una única vez.
+
+Para analizar las tendencias de uso de las estaciones de forma más detallada, hemos identificado las 20 estaciones más populares tanto de partida como de llegada.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+top_estaciones_origen <- trips %>%
+  select(nombre_estacion_origen) %>% #Tomo la columna de los nombres
+  group_by(nombre_estacion_origen) %>%#las ordeno por nombre
+  summarise(conteo = n()) %>% #Cuento cuantas veces se repiten
+  arrange(desc(conteo))#las ordeno de mayor a menor
+
+primeras_20_estaciones <- head(top_estaciones_origen, 20) #Tomo las primeras 20
+primeras_20_estaciones
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+top_estaciones_destino <- trips %>%
+  select(nombre_estacion_destino) %>%#Tomo la columna de los nombres
+  group_by(nombre_estacion_destino) %>%#las ordeno por nombre
+  summarise(conteo = n()) %>%#Cuento cuantas veces se repiten
+  arrange(desc(conteo))#las ordeno de mayor a menor
+
+primeras_20_estaciones <- head(top_estaciones_destino, 20) #Tomo las primeras 20
+primeras_20_estaciones
+```
+
+Comparando estas dos tablas, podemos ver que las estaciones más populares de salida son también muy populares como estaciones de llegada, mostrando que o muchas personas empiezan el trayecto en el mismo lugar en donde lo terminan, o simplemente que muchas personas van a un lugar y vuelven a salir desde ahí.
+
+Además, presentamos un gráfico que permite visualizar la distribución de la distancia recorrida en bicicleta por los usuarios. Hemos calculado la distancia en metros entre las estaciones de origen y destino para cada viaje (usando el geosphere); Luego, hemos agrupado estas distancias en categorías para comprender mejor los patrones de uso.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+trips_distancia <- trips %>%
+  select(Id_recorrido, long_estacion_origen, lat_estacion_origen, long_estacion_destino, lat_estacion_destino) %>%
+  mutate(Distancia_metros = round(distVincentySphere(cbind(long_estacion_origen, lat_estacion_origen), cbind(long_estacion_destino, lat_estacion_destino))))%>%
+  mutate(Distancia_grupos = case_when(
+           Distancia_metros >= 0 & Distancia_metros <= 2000 ~ "0-2000",
+           Distancia_metros > 2000 & Distancia_metros <= 4000 ~ "2000-4000",
+           Distancia_metros > 4000 & Distancia_metros <= 6000 ~ "4000-6000",
+           Distancia_metros > 6000 & Distancia_metros <= 8000 ~ "6000-8000",
+           Distancia_metros > 8000 ~ "8000+"))%>%
+arrange(Distancia_metros)
+
+grupo_frecuencia <- trips_distancia %>%
+  count(Distancia_grupos)%>%
+mutate(Porcentaje = round(n / sum(n) * 100))
+
+ggplot(grupo_frecuencia,
+       mapping = aes(
+         x=Distancia_grupos,
+         y=n,
+         fill=Distancia_grupos))+
+  geom_col() +
+  labs(x = "Metros Recorridos", y = "Cantidad Usuarios", title = "Distibucion por distancia(metros)") +
+   geom_label(aes(label = paste0(Porcentaje, "%")))
+
+
+
+```
+
+Para obtener una representación visual de la distribución y ubicación de las estaciones, hemos creado un mapa interactivo a traves del leaflet.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+todas_estaciones <- trips %>%
+  select(nombre_estacion_origen) %>%
+  group_by(nombre_estacion_origen) %>%
+  summarise(conteo = n()) %>%
+  arrange(desc(conteo))
+
+
+result <- inner_join(todas_estaciones, trips, by = "nombre_estacion_origen")%>%
+  select(nombre_estacion_origen, lat_estacion_origen, long_estacion_origen) %>%
+  distinct(nombre_estacion_origen, lat_estacion_origen, long_estacion_origen)
+
+
+mapa <- leaflet() %>%
+  addTiles() %>% 
+  addMarkers(data=result, 
+             lng = result$long_estacion_origen, 
+             lat = result$lat_estacion_origen,
+             clusterOptions = markerClusterOptions())
+
+mapa
+
+
+```
+
+En este mapa, destacamos las 100 estaciones más populares utilizadas como puntos de inicio para los viajes en bicicleta.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+top_estaciones <- trips %>%
+  select(nombre_estacion_origen) %>%
+  group_by(nombre_estacion_origen) %>%
+  summarise(conteo = n()) %>%
+  arrange(desc(conteo))
+
+primeras_100_estaciones <- top_estaciones %>%
+  head(100) 
+
+result <- inner_join(primeras_100_estaciones, trips, by = "nombre_estacion_origen")%>%
+  select(nombre_estacion_origen, lat_estacion_origen, long_estacion_origen) %>%
+  distinct(nombre_estacion_origen, lat_estacion_origen, long_estacion_origen)
+
+
+mapa <- leaflet() %>%
+  addTiles() %>% 
+  addMarkers(data=result, 
+             lng = result$long_estacion_origen, 
+             lat = result$lat_estacion_origen,
+             clusterOptions = markerClusterOptions())
+
+mapa
+```
+
+## Dataset: Datos del clima
+
+### Análisis descriptivo
+
+Empecemos describiendo las variables que presenta este dataset: En primer lugar vemos la fecha (**date**) en la que se registró cada dato del clima. Siguiendo con **tavg**, **tmin** y **tmax**, que son la temperatura promedio, la temperatura mínima y la temperatura máxima, respectivamente. Continuando con **prcp**, **snow**, **wdir**, **wspd**, **wpgt**, que son las precipitaciones registradas (lluvias, en mm.c.d.a., es decir milímetros de columna de agua), nieve, wind direction (dirección del viento, en grados, con 0 apuntando al sur), wind speed (velocidad del viento, en km/h) y ráfaga de viento, respectivamente. Terminando con **pres** y **tsun**, que es la presión atmosférica (en hPa), y duración del sol, respectivamente.
+
+Por lo visto, encontramos que hay algunas variables que no tienen datos, estas son: **snow**, **wpgt** y **tsun,** que representan la cantidad de nieve, la r. Por lo tanto, lo primero que hacemos es sacar estas columnas, porque no podemos trabajar con algo que no tiene datos.
+
+```{r}
+colnames(datos_clima)[1] <- "fecha"
+datos_clima <- datos_clima %>% select(fecha,tavg,tmin,tmax,prcp,wdir,wspd,pres)
+```
+
+Empecemos con el análisis descriptivo de este dataset:
+
+En primer lugar queremos hablar sobre el cambio de la temperatura a lo largo del año, en este primer gráfico podemos ver que la temperatura promedio desciende de enero a julio y asciende de julio a enero, con una linea de tendencia verde para mejor ver este cambio.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(datos_clima,mapping=aes(
+  x=fecha,
+  y=tavg)) + geom_line(aes(y=tavg),color="black") + geom_smooth(se=F,color="green") +
+  labs(x = "Fecha", y = "Temperatura Promedio(tavg)", title = "Temperatura promedio por día a lo largo del año")
+```
+
+En el siguiente gráfico podemos ver lo mismo, sólo que agregando las temperaturas mínimas (azul) y máximas (rojo).
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(datos_clima,mapping=aes(
+  x=fecha,
+  y=tavg)) + geom_line(aes(y=tavg),color="black") +
+  geom_line(aes(y=tmin),color="blue") + 
+  geom_line(aes(y=tmax), color="red") + 
+  geom_smooth(se=F, color="green")+ 
+  labs(x = "Fecha", y = "Temperatura Promedio(tavg)", title = "Temperatura promedio por día a lo largo del año")
+```
+
+Así podemos apreciar con mucha más información los cambios de temperatura anuales.
+
+También consideramos importante analizar los datos dados acerca del viento, los cuales mostramos en el siguiente gráfico.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+analisis_viento <- datos_clima %>%
+  select(wspd) %>%
+  mutate(tipo_viento = case_when(wspd > 1 & wspd <= 5 ~"calmado",
+                                 wspd > 5 & wspd <= 11 ~"brisa",
+                                 wspd > 11 & wspd <= 19~"leve",
+                                 wspd > 19 & wspd <= 28~"moderado",
+                                 wspd > 28 ~"regular"))
+analisis_viento
+```
+
+Respecto a la velocidad del viento, nos basamos en el Servicio Metereológico Nacional, para ver la clasificación de la intensidad del viento:
+
+-   Calmado: de 1km/h a 5km/h.
+
+-   Brisa: de 5km/h a 11km/h.
+
+-   Leve: de 11km/h a 19km/h.
+
+-   Moderado: de 19km/h a 28km/h.
+
+-   Regular: de 28km/h a 38km/h.
+
+    ```{r,error = FALSE, warning = FALSE,message = FALSE}
+    analisis_viento <- datos_clima %>%
+      select(fecha,wspd) %>%
+      mutate(tipo_viento = case_when(wspd > 1 & wspd <= 5 ~"calmado",
+                                     wspd > 5 & wspd <= 11 ~"brisa",
+                                     wspd > 11 & wspd <= 19~"leve",
+                                     wspd > 19 & wspd <= 28~"moderado",
+                                     wspd > 28 ~"regular"),fecha)
+
+
+    ggplot(analisis_viento, mapping = aes (
+      x = fecha,
+      y=wspd,color=tipo_viento
+    )) + geom_point()+ labs(x = "Fecha", y = "Velocidad del viento (wspd)", title = "Intensidad del viento por día")
+    ```
+
+Lo que podemos ver es que no hay ninguna relación entre época del año (ya sea día, mes, o estación) y velocidad del viento. Vemos que por lo general en un mismo mes la velocidad del viento puede ir desde calmada hasta moderado, o de brisa a regular, sin problema alguno.
+
+Ahora, vamos a trabajar con los dias que llovieron, usaron la siguiente tabla:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+datos_clima %>%
+  summarize(DíasTotales=365,
+            DíasConLluvia= sum(datos_clima$prcp> 0.0,na.rm=TRUE),
+            DíasSinLluvia=DíasTotales-DíasConLluvia,
+            PorcentajeDeDíasConLluvia= round((DíasConLluvia*100)/DíasTotales,2))
+```
+
+Ya con esto, podemos ver no solo la cantidad de dias que llovieron, sino tambien el porcentaje, y desde aquí podemos empezar a centrarnos en los días que hubo alguna precipitación específicamente, discriminandolo en la siguiente tabla y luego explayándolos en un gráfico:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+dias_con_lluvia<-datos_clima %>%
+  filter(prcp>0.0)
+
+dias_con_lluvia
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+#Filtramos un caso extremo para que el gráfico se pueda visualizar correctamente.
+ggplot(dias_con_lluvia %>% filter(prcp<50),mapping=aes(
+  x=fecha,
+  y=prcp, colour=prcp
+)) + geom_point() + labs(x = "Fecha", y = "Precipitaciones (prcp)", title = "Precipitaciones a lo largo del año")
+```
+
+Así, podemos ver de manera más clara la distribucion anual de días con lluvia, sin tener que centrarnos en días sin precipitaciones.
+
+En el siguiente cuadro en vez de centrarnos en días individuales vamos a centrarnos en los meses del año:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+meses_del_año <- datos_clima %>%
+  mutate(mes_del_año = months(fecha))
+
+meses_del_año
+```
+
+Teniendo cada mes, ahora calculamos las precipitaciones totales por mes.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+suma_lluvias_por_mes <- meses_del_año %>%
+  group_by(mes_del_año) %>%
+  summarize(SumaPrecipitaciones = sum(prcp, na.rm=TRUE))
+
+
+suma_lluvias_por_mes
+```
+
+Ahora hagamos un gráfico para ver cuánto llovió cada mes :
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+suma_lluvias_por_mes$mes_del_año=factor(suma_lluvias_por_mes$mes_del_año,levels=month.name)
+ggplot(suma_lluvias_por_mes, aes(x=mes_del_año,
+                                 y=SumaPrecipitaciones, fill=mes_del_año))+
+  geom_col()+ labs(title = "Precipitaciones por mes")
+```
+
+En este gráfico de barras se puede ver de forma más clara no solo la cantidad de precipitaciones por mes sino también una clara y simple comparación entre todo el año.
+
+Los siguientes gráficos muestran la velocidad del viento y la presión atmosférica respectivamente, ambas en función del día del año:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(datos_clima,mapping=aes(
+  x=fecha,
+  y=wspd
+)) + geom_line(colour="blue") + geom_smooth(method="lm", colour="lightblue")+ theme_bw()+
+  labs(x = "Fecha", y = "Velocidad Del Viento (wspd)", title = "Velocidad del viento a lo largo del año")
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+
+ggplot(datos_clima,mapping=aes(
+  x=fecha,
+  y=pres
+)) + geom_line(colour="brown") + geom_smooth(method="lm", colour="purple") + theme_bw() + labs(x = "Fecha", y = "Presión Atmosférica (pres)", title = "Presión Atmosférica a lo largo del año")
+```
+
+Como demuestra la línea de tendencia en azul, y a pesar de las aparentes grandes varianzas en las mediciones, estos saltos son tan frecuentes que los consideramos despreciables, al menos en función de la época del año.
+
+Ahora, ya con el análisis descriptivo de los dataframes dados, podemos pasar a la parte de análisis exploratorio.
+
+## Análisis exploratorio
+
+En esta parte del trabajo, nos centraremos en unir ambos data frames y buscar patrones en los datos dados, ya yendo más allá de los datos individuales que se muestran en las muestras dadas y analizando más en detalle las relaciones que podemos encontrar entre los datos.
+
+Para empezar, vamos a crear un nuevo dataframe llamado "union" que contenga los datos de clima y de EcoBicis en el mismo documento, juntándolos en base a la fecha:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+datos_clima <- datos_clima %>%
+  mutate(dia_del_año = row_number(),
+         estacion_año = case_when(
+           dia_del_año > 355 | dia_del_año <= 80 ~ "Verano",
+           dia_del_año > 80 & dia_del_año <= 172 ~ "Otoño",
+           dia_del_año > 172 & dia_del_año <= 264 ~ "Invierno",
+           dia_del_año > 264 & dia_del_año <= 355 ~ "Primavera"
+         ),
+         trabajo = ifelse((dia_del_año) %% 7 %in% c(2,1), "Fin de semana", "Dia Laboral"))
+
+union = trips %>%
+  inner_join(datos_clima, by="fecha")
+```
+
+Desde aquí, el análisis exploratorio se simplifica en gran medida. Por ejemplo, ahora podemos relacionar la cantidad de viajes hechos en un día con el nivel de precipitacion (removiendo un caso particular con demasiada precipitación), usando un nuevo dataframe llamado "conteo_fechas" que cuenta la cantidad de viajes hechos en un día:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+
+conteo_fechas <-trips %>%
+  group_by(fecha) %>%
+  summarise(Freq= n())
+
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+
+conteo_fechas_expandido <- conteo_fechas %>% inner_join(datos_clima, by="fecha") %>% filter(prcp< 200) %>% filter(prcp>0)
+
+ggplot(conteo_fechas_expandido,aes(
+  x=Freq,
+  y=prcp,
+)) + geom_point() + geom_smooth(method="lm") +
+  theme_classic()+ labs(x = "Cantidad de viajes)", y = "Precipitaciones (prcp)", title = "Relación de viajes y las precipitaciones")
+```
+
+Cómo se puede ver por la línea de tendencia, aunque sería más útil contar con más casos, se puede notar un simple patrón gracias a la línea de tendencia y es que se reduce la cantidad de viajes por día conforme aumenta la precipitación en determinado día. Sin embargo, sería útil centrarnos en relaciones más fuertes entre los dos dataframes.
+
+Esto lo podemos realizar si pasamos a buscar patrones entre la duración de recorrido y la precipitación, para ver si las condiciones climáticas afectan la duración de cada viaje más que la cantidad de viajes totales en un día.
+
+Para empezar, vamos a usar el dataframe anterior de "conteo_fechas" para ver la cantidad de viajes en cada día, y usar este numero para ver el promedio de duracion de viaje en cada día con lluvia, y buscar una correlacion entre estas variables, y con eso, explayar la informacion en un grafico para mejorar la visualizacion. Además, declaramos algunas variables que nos van a ayudar a filtrar los casos.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+promedio_duracion <- union %>% group_by(fecha) %>% 
+  summarize(promedio= mean(duracion_recorrido))
+
+promedio_duracion
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+promedio_duracion_con_lluvia <- union %>%
+  filter(prcp>0) %>% group_by(fecha) %>%
+  summarize(promedio= mean(duracion_recorrido))
+promedio_duracion_con_lluvia
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+dias_con_Precipitaciones <- union%>%
+  filter(prcp>0) %>% group_by(fecha) %>% select(fecha, prcp)
+dias_con_Precipitaciones
+```
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+diasConPrecipitacionesYPromedioDuracion<- distinct(dias_con_Precipitaciones%>%
+  inner_join(promedio_duracion_con_lluvia, by = "fecha"))
+diasConPrecipitacionesYPromedioDuracion
+```
+
+Nuevamente, filtramos el caso aislado con una precipitación muy grande.
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(diasConPrecipitacionesYPromedioDuracion %>% filter(prcp<40),
+  aes(
+  x = prcp,
+  y = promedio, colour=prcp
+)) + geom_point() + geom_smooth(method="lm", colour="grey") +scale_color_continuous(low="lightblue", high = "blue")+
+  theme_light() + labs(x = "Precipitaciones(prcp)", y = "Promedio de duración de viajes", title = "Promedio de duración de viajes según las precipitaciones")
+```
+
+En este grafico, el **eje x** son las *precipitaciones por día* y el **eje y** es el *promedio de duracion de viaje* en cada dia, contando solo los días con precipitaciones. Como se demuestra con la linea de tendencia, la gran variedad de viajes aparentemente no son afectados por la precipitacion en el dia. Esto nos lleva a la conclusion de que el nivel de precipitaciones no tiene una relacion lo suficientemente fuerte con la duracion de cada viaje como para mostrar un gran cambio en este, aunque parte de la Ciencia de Datos también incluye la interpretacion de datos, y sería negligente no mencionar que la mayoria de días con precipitaciones mayores a 0mm tuvieron lluvias de 5mm o menos, es decir, una llovizna. Ademas de esto, no tenemos los datos de las precipitaciones horarias, por lo que no podemos comparar el nivel de lluvia de cada momento con los viajes realizados en esos momentos; y por si todavía no lo aclaramos, la mayoría de los viajes tiene una corta duración, lo cual dificulta aún más ver si las precipitaciones afectaron a la duración de los viajes.
+
+Ahora, con el dataframe que creamos para el gráfico anterior (que contiene el *promedio de duracion de viaje* de cada día), podemos comparar esta variable con la *temperatura promedio diaria* y buscar una relación entre estas variables:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(union %>% inner_join(promedio_duracion,by="fecha") %>% distinct(fecha, .keep_all = T), aes(
+  x=tavg,
+  y=promedio
+)) + geom_point() + geom_smooth(method="lm") +
+  theme_bw()+ labs(x = "Temperatura Promedio(tavg)", y = "Promedio duración de viajes", title = "Promedio de duración de viajes según la temperatura promedio")
+```
+
+Como se puede ver con la línea de tendencia, la *duración promedio de viaje* aumenta ligeramente conforme la *temperatura promedio* de cada día, mostrando que la temperatura afecta a la cantidad de tiempo que cada persona anda en EcoBici, con más temperatura teniendo un efecto ligeramente positivo en este, aunque no se muestra la relación que tiene esta variable con la *cantidad de viajes diarios* en EcoBici, la podemos ver en el siguiente diagrama:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(union %>% inner_join(conteo_fechas,by="fecha") %>% distinct(fecha, .keep_all=T),aes(
+  x=tavg,
+  y=Freq, colour= trabajo
+)) + geom_point() + geom_smooth(se=F) +
+  labs(x = "Temperatura Promedio(tavg)", y = "Cantidad de viajes diarios", title = "Cantidad de viajes según la temperatura promedio")
+```
+
+En este gráfico, consideramos importante usar una linea de tendencia con un modelo no lineal, ya que ocultaria informacion importante para la interpretacion de datos. Esto se debe a que se puede ver un cambio en el uso de EcoBicis en temperaturas extremas, sean estas muy bajas o muy altas, pero un uso normal entre alrededor de los 15 y 25 grados celsius aproximadamente. Desde aqui, podemos inferir que la temperatura afecta a la cantidad de viajes en EcoBici, con las temperaturas más frías o más calientes señalando un uso reducido de EcoBicis.
+
+Y se puede destacar que la variable de Dia laborable o no laborable es muy importante si se busca predecir el uso de las bicicletas, pues se puede ver una clara agrupación de los puntos rojos y azules, teniendo los rojos una cantidad de viajes considerablemente mayor que los azules.
+
+Más allá del ambiente climático diario, es tambien útil ver la cantidad de viajes hechos en cada temporada del año, así pudiendo rastrear las tendencias de viajes, para lo cual organizamos el siguiente diagrama:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot (union, aes(
+  x = estacion_año, fill=estacion_año
+)) + geom_bar() +
+  theme_gray()+
+    labs(x = "Estación del año", y = "Cantidad de viajes", title = "Cantidad de viajes por estación")
+```
+
+Acá podemos ver que la mayoría de viajes se realizaron en primavera, que de por sí no sería lo suficientemente relevante para un análisis exploratorio, pero un tema importante en la Ciencia de Datos es la búsqueda de patrones entre la informacion. Para apoyar este gráfico, y este aspecto de la ciencia, usaremos la siguiente tabla, que muestra las temperaturas promedio por estacion:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+temp_promedio <- union %>% group_by(estacion_año) %>% summarize(temp_promedio = mean(tavg))
+temp_promedio
+```
+
+Ahora, podemos relacionar tres importantes piezas de datos, el gráfico de barras que muestra los *viajes por estación*, el cuadro que detalla la *temperatura promedio estacional* y el gráfico de puntos que indica el *uso de ecobicis en funcion de la temperatura*. Con estas tres piezas de información, resulta fácil encontrar patrones, ya que desde acá podemos extrapolar el por qué hay un elevado uso de EcoBicis en primavera, y esto se debe a que las temperaturas durante esta estación, están en un promedio de 20 grados, y usando el gráfico de temperaturas anterior, vemos que la línea de tendencia llega a un pico en, justamente, 20 grados, mientras que las demás temperaturas promedio, aunque estén alrededor de este rango, no alcanzan a la temperatura óptima que es el promedio en primavera. Usando tres simples maneras de visualizar la información, podemos inferir una de las razones del uso elevado de EcoBicis en esta estación, lo cual se ve reforzado por el siguiente gráfico, que son los **viajes en funcion de la temperatura** pero esta vez, agregando las estaciones del año:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+ggplot(union %>% inner_join(conteo_fechas,by="fecha") %>% distinct(fecha, .keep_all=T),aes(
+  x=tavg,
+  y=Freq,
+  color = estacion_año
+)) + geom_boxplot() + labs(x = "Temperatura Promedio (tavg)", y = "Cantidad de viajes", title = "Viajes en función de la temperatura en cada estación del año")
+```
+
+En efecto, se puede observar que los días en primavera se encuentran alrededor de los 20 grados, la temperatura óptima según descubrimos, mientras que las demás estaciones se encuentran en rangos alrededor de temperaturas más bajas o altas, alejándose de donde se alcanza el pico. No solo eso, sino podemos ver que la frecuencia más alta se encuentra en primavera, reforzando aún más la razon de por qué hay más viajes en esta estación.
+
+Ahora, más allá de las tendencias estacionales del uso de EcoBici, podemos pasar a centrarnos en los usos de EcoBicis en función de las horas del día. Para esto, usaremos la siguiente función para separar los horarios de EcoBicis entre fecha y hora de salida y de llegada por separado:
+
+```{r,error = FALSE, warning = FALSE,message = FALSE}
+#Dejamos solo la hora. Y lo pasamos a tipo integer
+union <- union %>%
+  mutate(hora_origen_recorrido = as.integer(format(fecha_origen_recorrido, format = "%H")),hora_destino_recorrido=as.integer(format(fecha_destino_recorrido,format = "%H")))
+
+#Gráfico en función de la hora de origen
+ggplot(union, aes(x=hora_origen_recorrido ))+ geom_bar(fill="yellow", colour="red") + theme_classic()+
+    labs(x = "Hora Origen)", y = "Cantidad de viajes", title = "Grafico de los viajes en función de la hora de origen")
+
+#Gráfico en función de la hora del destino
+ggplot(union, aes(x=hora_destino_recorrido))+ geom_bar(fill="yellow", colour="red")+ theme_classic()+
+    labs(x = "Hora Destino)", y = "Cantidad de viajes", title = "Grafico de los viajes en función de hora de llegada")
+```
+
+Se puede ver un panorama general de a qué hora empiezan los viajes, pero un detalle importante es que la mayoría empieza y termina en la misma hora (Los viajes no duran más de una hora, y en realidad esa diferencia entre hora de origen y hora de llegada se da porque alguien empieza por ejemplo, un viaje a las 14:50hs y lo termina a las 15:05). Si los viajes fueran más largos se podría apreciar alguna diferencia mínima, pero así como está sirve para tener un panorama de a qué hora se realizan los trayectos.
+
+## Cierre
+
+Aquí damos por finalizado este trabajo práctico donde hicimos un análisis extensivo del dataset de EcoBicis y del dataset de las temperaturas en 2022; primero de forma individual (análisis descriptivo), y luego de forma grupal, combinando ambos datasets (análisis exploratorio), donde en éste último tipo de análisis pudimos sacar conclusiones acerca de la información que portaban estos datos.
+
+## Bibliografia
+
+Datos del uso de EcoBicis: <https://data.buenosaires.gob.ar/dataset/bicicletas-publicas>
+
+Datos del clima durante 2022: <https://meteostat.net/es/station/87582?t=2022-01-01/2022-12-31>
+
+Clasificación de la intensidad del viento: <https://www.smn.gob.ar/noticias/%C2%BFc%C3%B3mo-clasificamos-la-intensidad-del-viento>
+
+Librerías usadas: lubridate, dplyr, readr, ggplot2, tidyr, geosphere y leaflet
